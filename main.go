@@ -298,16 +298,14 @@ func main() {
 					w.WriteHeader(http.StatusOK)
 					host, _, err := net.SplitHostPort(r.Host)
 					if err != nil {
-						log.Printf("Failed to parse request host and port: %v", err)
-						http.Error(w, "", http.StatusBadRequest)
-					} else {
-						if display {
-							tmpl.Execute(w, idx{
-								Token: c.Value,
-								Netrc: netrc(host, c.Value),
-							})
-							log.Printf("Provided token for user %s", claims.Id)
-						}
+						host = r.Host
+					}
+					if display {
+						tmpl.Execute(w, idx{
+							Token: c.Value,
+							Netrc: netrc(host, c.Value),
+						})
+						log.Printf("Provided token for user %s", claims.Id)
 					}
 					return
 				}
