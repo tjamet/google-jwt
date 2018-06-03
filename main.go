@@ -35,7 +35,8 @@ const help = `Usage:
 
 Options:
 	--no-secure                   Stores the authentication without the secure option (cookie exposed on http as well as https)
-	--display                     Displays the quthentiation token in the home page. This allows the user to easily copy-paste the token in his .netrc
+	--display                     Displays the authentiation token in the home page. This allows the user to easily copy-paste the token in his .netrc
+	--expose-public-key           Adds an endpoint to download the public key
 	--client-secret-file=<name>   The path to which the google client secret has been downloaded [Default: client_secret.json]
 	--cookie-name=<name>          The name of the cookie the token will be stored in [Default: token]
 	--key=<key>                   The raw encoding key to be used
@@ -213,6 +214,7 @@ func main() {
 	display = args["--display"].(bool)
 	cookieName = args["--cookie-name"].(string)
 	acceptedMails := args["--email"].([]string)
+	asymetricKey := false
 
 	// provide a quick feedback if the given email contains a pattern error
 	emailMatched("test@example.org", acceptedMails)
@@ -259,10 +261,12 @@ func main() {
 	case *rsa.PrivateKey:
 		log.Printf("Using RSA asymetric encoding method")
 		cookieSigningMethod = jwt.SigningMethodRS512
+		asymetricKey = true
 		cookieDecodingKey = &cookieEncodingKey.(*rsa.PrivateKey).PublicKey
 	case *ecdsa.PrivateKey:
 		log.Printf("Using ECDSA asymetric encoding method")
 		cookieSigningMethod = jwt.SigningMethodES512
+		asymetricKey = true
 		cookieDecodingKey = &cookieEncodingKey.(*ecdsa.PrivateKey).PublicKey
 	case []byte:
 		log.Printf("Using HMAC symetric encoding method")
@@ -315,6 +319,26 @@ func main() {
 		redirect(w, r)
 	})
 	http.HandleFunc("/auth", redirect)
+	if asymetricKey && args["--expose-public-key"].(bool) {
+		http.HandleFunc("/public_key.pem", func(w http.ResponseWriter, r *http.Request) {
+			asn1Bytes, err := x509.MarshalPKIXPublicKey(cookieDecodingKey)
+			if err != nil {
+				log.Printf("Failed to mashall public key: %v", err)
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			pemkey := &pem.Block{
+				Type:  "PUBLIC KEY",
+				Bytes: asn1Bytes,
+			}
+			err = pem.Encode(w, pemkey)
+			if err != nil {
+				log.Printf("Failed to encode public key PEM: %v", err)
+				return
+			}
+			log.Println("Provided public key")
+		})
+	}
 	http.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
 		state := r.FormValue("state")
 		if code := r.FormValue("code"); code != "" {
